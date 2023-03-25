@@ -1,0 +1,348 @@
+---
+title: ''
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Modeling
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(tidyverse)
+library(modelr)
+```
+```{r}
+setwd('..')
+path <- getwd()
+```
+
+Using the U.S. Transgender Population Health Survey (TransPop) originally available from https://www.icpsr.umich.edu/web/ICPSR/studies/37938
+
+```{r}
+file <- paste(path, 'TransPopData/37938-0001-Data.rda', sep='/')
+```
+
+
+```{r}
+load(file)
+```
+
+
+```{r}
+raw_data <- da37938.0001
+```
+
+# Part A
+
+1. Comparing the weighted and unweighted distributions of trans people of different races and ethnicities:
+
+```{r}
+data <- select(raw_data, c('STUDYID', 'WEIGHT', 'RACE', 'GENDER', 'SEXUALID'))
+```
+
+
+```{r}
+grouped <- data %>% 
+            group_by(RACE) %>% summarize(WEIGHT_GRP = sum(WEIGHT), COUNT = n()) 
+
+grouped <- grouped %>% mutate(WEIGHTED_PROP = WEIGHT_GRP/sum(WEIGHT_GRP), PROP = COUNT/sum(COUNT))
+
+ggplot(grouped, aes(x = RACE, y = PROP)) +
+  geom_bar(stat = "identity", position=position_dodge()) +
+  labs(title = "Proportion of Trans by Race",
+       x = "Race",
+       y = "Proportion of Trans") + coord_flip()
+
+ggplot(grouped, aes(x = RACE, y = WEIGHTED_PROP)) +
+  geom_bar(stat = "identity", position=position_dodge()) +
+  labs(title = "Weighted Proportion of Trans by Race",
+       x = "Race",
+       y = "Weighted Proportion of Trans") + coord_flip()
+
+```
+White ethnicity are over represented. Rest all fall in minority. Middle eastern are the most underrepresented (not considering other).
+
+2. compare the weighted and unweighted distributions of trans people with different sexual orientations
+
+```{r}
+grouped <- data %>% 
+            group_by(SEXUALID) %>% summarize(WEIGHT_GRP = sum(WEIGHT), COUNT = n()) 
+
+grouped <- grouped %>% mutate(WEIGHTED_PROP = WEIGHT_GRP/sum(WEIGHT_GRP), PROP = COUNT/sum(COUNT))
+
+ggplot(grouped, aes(x = SEXUALID, y = PROP)) +
+  geom_bar(stat = "identity", position=position_dodge()) +
+  labs(title = "Proportion of Trans by Sexuality",
+       x = "Sexuality",
+       y = "Proportion of Trans") + coord_flip()
+
+ggplot(grouped, aes(x = SEXUALID, y = WEIGHTED_PROP)) +
+  geom_bar(stat = "identity", position=position_dodge()) +
+  labs(title = "Weighted Proportion of Trans by Sexuality",
+       x = "Sexuality",
+       y = "Weighted Proportion of Trans") + coord_flip()
+
+```
+Asexual and same gender loving are under represented (ignoring unknown (NA)).
+
+# Part B
+
+The survey includes several validated scales for measuring constructs related to identity, stress, and health. We would like to use these scales to build a model for predicting satisfaction with life among trans people.
+
+```{r}
+filter_data <- select(raw_data, c('LIFESAT_I', 'SOCIALWB_I', 'NONAFFIRM_I', 'NONDISCLOSURE_I',  'HCTHREAT_I', 'KESSLER6_I', 'EVERYDAY_I'))
+```
+
+```{r}
+ggplot(filter_data, aes(x=SOCIALWB_I, y=LIFESAT_I)) + 
+  geom_point() +
+  geom_jitter() +
+  geom_smooth() +
+  geom_smooth(method="lm", color='red') +
+  labs(x='Social well being', y="Satisfaction with Life")
+
+ggplot(filter_data, aes(x=NONAFFIRM_I, y=LIFESAT_I)) + 
+  geom_point() +
+  geom_jitter() +
+  geom_smooth() +
+  geom_smooth(method="lm", color='red') +
+  labs(x='Non-affirmation of gender identity', y="Satisfaction with Life")
+
+ggplot(filter_data, aes(x=NONDISCLOSURE_I, y=LIFESAT_I)) + 
+  geom_point() +
+  geom_jitter() +
+  geom_smooth() +
+  geom_smooth(method="lm", color='red') +
+  labs(x='Non-disclosure of gender identity', y="Satisfaction with Life")
+
+ggplot(filter_data, aes(x=HCTHREAT_I, y=LIFESAT_I)) + 
+  geom_point() +
+  geom_jitter() +
+  geom_smooth() +
+  geom_smooth(method="lm", color='red') +
+  labs(x='Healthcare stereotype threat', y="Satisfaction with Life")
+
+ggplot(filter_data, aes(x=KESSLER6_I, y=LIFESAT_I)) + 
+  geom_point() +
+  geom_jitter() +
+  geom_smooth() +
+  geom_smooth(method="lm", color='red') +
+  labs(x='Mental distress/disorder', y="Satisfaction with Life")
+
+ggplot(filter_data, aes(x=EVERYDAY_I, y=LIFESAT_I)) + 
+  geom_point() +
+  geom_jitter() +
+  geom_smooth() +
+  geom_smooth(method="lm", color='red') +
+  labs(x='Everyday discrimination', y="Satisfaction with Life")
+```
+
+Social well being (SOCIALWB_I) has positive relationship with Satisfaction with life (LIFESAT_I)
+Mental distress/disorder (KESSLER6_I) has a negative relationship with Satisfaction with life (LIFESAT_I)
+All others have weak negative relationship with Satisfaction with life (LIFESAT_I)
+
+Since Social well being seems to have the strongest relation with life satisfaction, I chose it as a predictor.
+
+```{r}
+fit1 <- lm(LIFESAT_I ~ SOCIALWB_I, data=filter_data)
+summary(fit1)
+```
+
+```{r}
+filter_data %>%
+  add_residuals(fit1, "resid") %>%
+  ggplot(aes(x=SOCIALWB_I)) +
+  geom_point(aes(y=resid), alpha=0.2) +
+  labs(x="Social Well being", y="Residuals") +
+  theme_minimal()
+
+filter_data %>%
+  add_residuals(fit1, "resid") %>%
+  ggplot(aes(sample=resid)) +
+  geom_qq() + 
+  theme_minimal()
+```
+From the plot we can see it is not systematic. There isn't a very symmetric pattern, so we can consider no violations of model assumptions. Distribution is also approximately normal. So we can take Social well being as a predictor. 
+
+Seeing high error points.
+
+```{r}
+filter_data %>%
+  add_residuals(fit1, "resid") %>%
+  filter(resid > 3 | resid < -3)
+```
+
+Removing high error samples can improve the model fit and reduce the influence of outliers on the estimated regression coefficients. However it may not be the best way as we don't have a good understanding of underlying model assumptions. To be sure, checking if removing them does improve model performance.
+
+```{r}
+new <- filter_data %>%
+  add_residuals(fit1, "resid") %>%
+  filter(resid <= 3 & resid >= -3)
+
+new <- subset(new, select = -resid)
+
+fit1 <- lm(LIFESAT_I ~ SOCIALWB_I, data=new)
+summary(fit1)
+```
+
+```{r}
+sampled_data <- resample_partition(filter_data, p=c(train=0.6, valid=0.2, test=0.2))
+```
+
+```{r}
+fit1 <- lm(LIFESAT_I~SOCIALWB_I, data=sampled_data$train)
+rmse(fit1, sampled_data$valid)
+```
+
+```{r}
+rmse(fit1, sampled_data$test)
+```
+
+```{r}
+sampled_data <- resample_partition(new, p=c(train=0.6, valid=0.2, test=0.2))
+```
+
+```{r}
+fit1 <- lm(LIFESAT_I~SOCIALWB_I, data=sampled_data$train)
+rmse(fit1, sampled_data$valid)
+```
+
+```{r}
+rmse(fit1, sampled_data$test)
+```
+
+Removing high error samples does improve the model fit. So using that data further.
+
+
+```{r}
+
+new %>%
+  add_residuals(fit1, "resid") %>%
+  ggplot(aes(x=NONAFFIRM_I, y=resid)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x="Non-affirmation of gender identity", y="Residuals") +
+  theme_minimal()
+
+new %>%
+  add_residuals(fit1, "resid") %>%
+  ggplot(aes(x=NONDISCLOSURE_I, y=resid)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x="Non-disclosure of gender identity", y="Residuals") +
+  theme_minimal()
+
+
+new %>%
+  add_residuals(fit1, "resid") %>%
+  ggplot(aes(x=HCTHREAT_I, y=resid)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x="Healthcare stereotype threat", y="Residuals") +
+  theme_minimal()
+
+
+new %>%
+  add_residuals(fit1, "resid") %>%
+  ggplot(aes(x=KESSLER6_I, y=resid)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x="Mental distress/disorder", y="Residuals") +
+  theme_minimal()
+
+
+new %>%
+  add_residuals(fit1, "resid") %>%
+  ggplot(aes(x=EVERYDAY_I, y=resid)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x="Everyday discrimination", y="Residuals") +
+  theme_minimal()
+
+```
+
+From above residuals, mental distress (KESSLER6_I) seems to be systematic (has a pattern) so this indicates a violation of model assumption.
+
+```{r}
+fit2 <- lm(LIFESAT_I~SOCIALWB_I + KESSLER6_I, data=new)
+
+new %>%
+  add_residuals(fit2, "resid") %>%
+  ggplot(aes(x=NONAFFIRM_I, y=resid)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x="Non-affirmation of gender identity", y="Residuals") +
+  theme_minimal()
+
+new %>%
+  add_residuals(fit2, "resid") %>%
+  ggplot(aes(x=NONDISCLOSURE_I, y=resid)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x="Non-disclosure of gender identity", y="Residuals") +
+  theme_minimal()
+
+
+new %>%
+  add_residuals(fit2, "resid") %>%
+  ggplot(aes(x=HCTHREAT_I, y=resid)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x="Healthcare stereotype threat", y="Residuals") +
+  theme_minimal()
+
+new %>%
+  add_residuals(fit2, "resid") %>%
+  ggplot(aes(x=EVERYDAY_I, y=resid)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x="Everyday discrimination", y="Residuals") +
+  theme_minimal()
+```
+
+Seeing the residuals, there is no violation of model assumption. So mental distress is added as a predictor.
+
+Also if we check, model performs better (RMSE improves) when mental distress is added as a predictor.
+
+```{r}
+
+step1 <- function(response, predictors, candidates, partition)
+{
+  rhs <- paste0(paste0(predictors, collapse="+"), "+", candidates)
+  formulas <- lapply(paste0(response, "~", rhs), as.formula)
+  rmses <- sapply(formulas, function(fm) rmse(lm(fm, data=partition$train),
+                                    data=partition$valid))
+  names(rmses) <- candidates
+  attr(rmses, "best") <- rmses[which.min(rmses)]
+  rmses
+}
+
+```
+
+```{r}
+model <- NULL
+response <- 'LIFESAT_I'
+```
+
+```{r}
+preds <- "SOCIALWB_I"
+cands <- c('NONAFFIRM_I', 'NONDISCLOSURE_I',  'HCTHREAT_I', 'KESSLER6_I', 'EVERYDAY_I')
+s1 <- step1(response, preds, cands, sampled_data)
+
+model <- c(model, attr(s1, "best"))
+model
+s1
+```
+
+```{r}
+fit2 <- lm(LIFESAT_I~SOCIALWB_I + KESSLER6_I, data=sampled_data$train)
+
+rmse(fit2, sampled_data$valid)
+```
+
+```{r}
+rmse(fit2, sampled_data$test)
+```

@@ -1,0 +1,209 @@
+---
+title: ''
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Exploratory Data Analysis
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(tidyverse)
+library(RSQLite)
+```
+
+
+Using data from the US Department of Education’s Civil Rights Data Collection. It was downloaded from the zipped 2017-2018 data available at https://www2.ed.gov/about/offices/list/ocr/docs/crdc-2017-18.html.
+
+```{r}
+setwd('..')
+dir <- getwd()
+```
+
+1. The distribution of students by race and gender across all schools
+
+```{r}
+# load enrollment data
+
+dir1 <- "2017-18-crdc-data-corrected-publication 2/2017-18 Public-Use Files/Data/SCH/CRDC/CSV/Enrollment.csv"
+path <- paste(dir, dir1, sep="/")
+enrollment <- read_csv(file=path)
+```
+```{r}
+
+# there are negative values for enrollment count (CRDC reserve codes) 
+# replacing them with 0 
+
+numeric_cols <- sapply(enrollment, is.numeric)
+enrollment[numeric_cols][enrollment[numeric_cols] < 0] <- 0
+enrollment
+```
+
+
+```{r}
+# total enrollment across all schools
+enr_totals <- select(enrollment, starts_with('TOT_ENR')) %>% colSums()
+total_enrollment <- enr_totals['TOT_ENR_M'] + enr_totals['TOT_ENR_F']
+```
+
+
+```{r}
+# get all ethnicity enrollments
+enr_req <- select(enrollment, starts_with('SCH_ENR')) 
+
+cols <- names(enr_req)[grep("^SCH_ENR_", names(enr_req))]
+cols_m <- names(enr_req)[grep("_M$", names(enr_req))]
+cols_f <- names(enr_req)[grep("_F$", names(enr_req))]
+
+# sum all enrollments for each ethnicity and gender
+enr_req <- enr_req %>% pivot_longer(cols, names_to = "ethnicity", values_to = "count")
+
+enr_req <- summarise(group_by(enr_req, ethnicity), count = sum(count))
+
+enr_req$gender <- ifelse(grepl("_M$", enr_req$ethnicity),  "male" , "female")
+
+# remove prefix and sufix from ethnicity
+enr_req$ethnicity <- sub("_M$", "", enr_req$ethnicity)
+enr_req$ethnicity <- sub("_F$", "", enr_req$ethnicity)
+enr_req$ethnicity <- sub("^SCH_ENR_", "", enr_req$ethnicity)
+enr_req$ethnicity <- sub("^SCH_ENR_", "", enr_req$ethnicity)
+
+# remove extra columns
+enr_req <- subset(enr_req, !(ethnicity %in% c("504", "IDEA", "LEP")))
+
+# calculate proportion
+enr_req <- enr_req %>% mutate(prop = count / total_enrollment)
+
+enr_req
+```
+
+```{r}
+ggplot(enr_req, aes(x = ethnicity, y = prop, fill = gender)) +
+  geom_bar(stat = "identity", position=position_dodge()) +
+  labs(title = "Enrollment by Ethnicity and Gender",
+       x = "Ethnicity",
+       y = "Proportion of Students",
+       fill = "") +
+  theme_minimal()
+```
+We can see that the proportion of white students is very high in comparison to other races. Lowest are Hawaiian/Pacific Islanders, American Indian/Alaska Native, Asians and students belonging to two or more races (TR) - all less than 5%. Male - female proportions are almost equal in all races (female enrollment is slightly lower).
+
+2. The distribution of Advanced Placement (AP) students (i.e., students enrolled in at least one AP course) by race and gender across all schools.
+
+```{r}
+# read AP dataset
+dir2 <- "2017-18-crdc-data-corrected-publication 2/2017-18 Public-Use Files/Data/SCH/CRDC/CSV/Advanced Placement.csv"
+path <- paste(dir, dir2, sep="/")
+ap <- read_csv(file=path, na="-9")
+
+# there are negative values (CRDC reserve codes) 
+# replacing them with 0 
+numeric_cols <- sapply(ap, is.numeric)
+ap[numeric_cols][ap[numeric_cols] < 0] <- 0
+ap
+```
+
+```{r}
+# filter only schools with at least one AP course
+ap <- filter(ap, SCH_APENR_IND == 'Yes')
+
+# calculate AP total enrollment
+ap_enr_totals <- select(ap, starts_with('TOT_APENR_')) %>% colSums()
+ap_total_enrollment <- ap_enr_totals['TOT_APENR_M'] + ap_enr_totals['TOT_APENR_F']
+
+# take only necesarry columns
+ap_enr_req <- select(ap, starts_with('SCH_APENR_')) 
+ap_enr_req <- subset(ap_enr_req, select = -SCH_APENR_IND)
+
+cols <- names(ap_enr_req)[grep("^SCH_APENR_", names(ap_enr_req))]
+cols_m <- names(ap_enr_req)[grep("_M$", names(ap_enr_req))]
+cols_f <- names(ap_enr_req)[grep("_F$", names(ap_enr_req))]
+
+# sum all enrollments for each ethnicity and gender combination
+ap_enr_req <- ap_enr_req %>% pivot_longer(cols, names_to = "ethnicity", values_to = "count")
+ap_enr_req <- summarise(group_by(ap_enr_req, ethnicity), count = sum(count))
+# separate male and female from ethnicity
+ap_enr_req$gender <- ifelse(grepl("_M$", ap_enr_req$ethnicity),  "male" , "female")
+
+# remove suffix and prefix from names
+ap_enr_req$ethnicity <- sub("_M$", "", ap_enr_req$ethnicity)
+ap_enr_req$ethnicity <- sub("_F$", "", ap_enr_req$ethnicity)
+ap_enr_req$ethnicity <- sub("^SCH_APENR_", "", ap_enr_req$ethnicity)
+ap_enr_req$ethnicity <- sub("^SCH_APENR_", "", ap_enr_req$ethnicity)
+
+ap_enr_req <- subset(ap_enr_req, !(ethnicity %in% c("504", "IDEA", "LEP")))
+
+# calculate proportion
+ap_enr_req <- ap_enr_req %>% mutate(prop = count / ap_total_enrollment)
+
+ap_enr_req
+```
+
+```{r}
+ggplot(ap_enr_req, aes(x = ethnicity, y = prop, fill = gender)) +
+  geom_bar(stat = "identity", position=position_dodge()) +
+  labs(title = "AP Enrollment by Ethnicity and Gender",
+       x = "Ethnicity",
+       y = "Proportion of Students",
+       fill = "") +
+  theme_minimal()
+```
+
+We can see that the proportion of white students taking at least one AP course is high in comparison to other races. Lowest are Hispanic, Indian Americans and students belonging to two or more races (TR) - all less than 5%. This is similar to overall enrollment plot in problem 1. Other than that, Asians and Black ethnic groups have similar number of enrollments. There is more female enrollment in AP courses for all races which is different compared to previous plot.
+
+3. Visualize whether there is a trend of students of color (i.e., non-white students) being underrepresented in AP programs at schools.
+
+```{r}
+
+# merge enrollment data and filtered ap data
+cols_enr <- names(enrollment)[grep("^SCH_ENR_", names(enrollment))]
+cols_enr <- cols_enr[!(cols_enr %in% c("SCH_ENR_LEP_M","SCH_ENR_LEP_F",
+                                       "SCH_ENR_504_M","SCH_ENR_504_F",
+                                       "SCH_ENR_IDEA_M","SCH_ENR_IDEA_F"))]
+
+cols_ap_enr <- names(ap)[grep("^SCH_APENR_", names(ap))]
+cols_ap_enr <- cols_ap_enr[!(cols_ap_enr %in% c("SCH_APENR_LEP_M",
+                                                "SCH_APENR_LEP_F",
+                                                "SCH_APENR_IDEA_M",
+                                                "SCH_APENR_IDEA_F",
+                                                "SCH_APENR_IND"))]
+
+cols <- c('SCHID',cols_enr, cols_ap_enr, 'TOT_ENR_M','TOT_ENR_F',
+          'TOT_APENR_M','TOT_APENR_F')
+
+merged_df <- select(merge(x=enrollment, y=ap, by=c('COMBOKEY', 'SCHID')), cols)
+
+# group by school
+df_summary <- merged_df %>% 
+  group_by(SCHID) %>% 
+  summarize(across(everything(), sum))
+
+#calculate color students proportions for each school
+df_summary <- df_summary %>% mutate(TOT_COLOR = 
+                                      rowSums(df_summary[, cols_enr[!(cols_enr 
+                                      %in% c("SCH_ENR_WH_M","SCH_ENR_WH_F"))]]),
+                                    TOT_AP_COLOR = 
+                                      rowSums(df_summary[, cols_ap_enr[!(cols_ap_enr 
+                                      %in% c("SCH_APENR_WH_M","SCH_APENR_WH_F"))]]),
+                                    PROP_COLOR = TOT_COLOR/(TOT_ENR_F + TOT_ENR_M),
+                                    PROP_AP_COLOR = TOT_AP_COLOR/(TOT_APENR_F + TOT_APENR_M))
+
+df_summary <- select(df_summary, c('SCHID','PROP_COLOR', 'PROP_AP_COLOR'))
+df_summary
+```
+
+
+```{r}
+ggplot(df_summary, aes(x = PROP_COLOR, y = PROP_AP_COLOR)) +
+  geom_point() +
+  geom_abline(slope=1, color='red') +
+  xlab("Proportion of students of color out of all enrolled students") +
+  ylab("Proportion of students of color in at least one AP class")
+```
+The points above the reference line are less dense than the points below. Most classes have almost equal representation. Some classes have little to no color representation. It can be said that color students are somewhat underrepresented.
+
+

@@ -1,0 +1,142 @@
+---
+title: ""
+author: "Akshi Saxena"
+date: "2023-01-30"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Part A
+
+Importing a data into R, tidying it and performing a simple meaningful visualization.
+
+Chocolate Bar Ratings is the dataset used - https://www.kaggle.com/datasets/rtatman/chocolate-bar-ratings?select=flavors_of_cacao.csv
+
+Variables:
+1. Company (Maker-if known) - Name of the company manufacturing the bar.
+
+2. Specific Bean Originor Bar Name - The specific geo-region of origin for the bar.
+
+3. REF - A value linked to when the review was entered in the database. Higher = more recent.
+
+4. ReviewDate - Date of publication of the review.
+
+5. CocoaPercent - Cocoa percentage (darkness) of the chocolate bar being reviewed.
+
+6. CompanyLocation - Manufacturer base country.
+
+7. Rating - Expert rating for the bar.
+Rating System:
+5= Elite (Transcending beyond the ordinary limits)
+4= Premium (Superior flavor development, character and style)
+3= Satisfactory(3.0) to praiseworthy(3.75) (well made with special qualities)
+2= Disappointing (Passable but contains at least one significant flaw)
+1= Unpleasant (mostly unpalatable)
+
+8. BeanType - The variety (breed) of bean used, if provided.
+
+9. Broad BeanOrigin - The broad geo-region of origin for the bean.
+
+
+Preprocessing:
+1. Renamed columns to remove white space and shorter names
+2. Changed data type - cocoa_percent was string have "%" symbol. Removed the symbol and converted it to numeric.
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+```{r}
+setwd('..')
+dir <- getwd()
+```
+
+
+```{r}
+path <- paste(dir, "flavors_of_cacao.csv", sep="/")
+cocoa_data <- read_csv(file=path)
+head(cocoa_data)
+```
+
+```{r}
+colnames(cocoa_data) <- c("company", "bean_orig", "ref", "review_year", "cocoa_perc", "company_loc", "rating", "bean_type", "broad_bean_orig")
+
+cocoa_data$cocoa_perc <- gsub("%", "", as.character(cocoa_data$cocoa_perc))
+cocoa_data <- transform(cocoa_data, cocoa_perc = as.numeric(cocoa_perc))
+
+head(cocoa_data)
+
+```
+
+How the cocoa percentage of chocolate bars change over time? How does that affect ratings?
+
+```{r}
+ggplot(cocoa_data, aes(x= review_year, y = rating, color = cocoa_perc)) + 
+    geom_point() + 
+    geom_jitter() +
+    geom_smooth()
+```
+
+There are more reviews each year. It looks like chocolate bars with very high cocoa percents tend to get lower ratings.
+
+## Part B
+
+Used data on NCAA student-athlete academic performance. The files include the codebook and tab-delimited data for team-level
+Academic Progress Rates (APRs) of Division I student-athletes from 2003-2014.
+
+```{r}
+
+path <- paste(dir, "NCAA-D1-APR-2003-14/DS0001/26801-0001-Data.tsv", sep="/")
+apr_df_raw <- read_tsv(path, na="-99")
+head(apr_df_raw)
+```
+
+
+1. Visualizing the distributions of APRs over time.
+
+```{r}
+apr_df <- apr_df_raw %>%
+  pivot_longer(cols=starts_with("APR_RATE"), names_to="YEAR", values_to="APR") %>%
+  select(SCL_UNITID, SCL_NAME, SPORT_CODE, SPORT_NAME, YEAR, APR) %>%
+  mutate(YEAR=as.numeric(stringr::str_sub(YEAR, start=10, 13)))
+head(apr_df)
+```
+
+```{r}
+ggplot(apr_df) + geom_boxplot(aes(x=as.factor(YEAR), y=APR))
+```
+
+It looks like APR is increasing over time from 2004 to 2014.
+
+
+2. Visualizing the distribution of APR over time broken down by gender division:
+
+```{r}
+gender_df <- apr_df %>% filter(SPORT_CODE != 38)
+gender_df$GENDER <- ifelse(gender_df$SPORT_CODE < 19, "Men", "Women")   
+head(gender_df)
+```
+
+```{r}
+ggplot(gender_df) + geom_boxplot(aes(x=as.factor(YEAR), y=APR, color=GENDER))
+```
+
+It seems that over the years 2004 to 2014, women’s teams have a more APR than men’s teams on an average.
+
+
+3. Visualizing the distribution of APR for both men’s and women’s teams for each sport:
+
+```{r}
+df <- gender_df %>% mutate(SPORT_NAME = stringr::str_remove(SPORT_NAME, "Men's")) %>% mutate(SPORT_NAME = stringr::str_remove(SPORT_NAME, "Women's"))
+ggplot(df) + geom_boxplot(aes(x=as.factor(SPORT_NAME), y=APR, color=GENDER)) + coord_flip()
+```
+
+The sports - Voleyball and Fencing have similar APR for Men and Women.
